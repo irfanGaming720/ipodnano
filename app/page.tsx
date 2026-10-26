@@ -1,0 +1,30 @@
+'use client'
+
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { tick } from '../js/audioFx'
+import { coverTransform, Inertia } from '../js/physicsEngine'
+
+type Album={title:string;artist:string;year:string;colors:[string,string];tracks:string[]}
+const albums:Album[]=[
+ {title:'Discovery',artist:'Daft Punk',year:'2001',colors:['#143d76','#dca331'],tracks:['One More Time','Aerodynamic','Digital Love','Harder, Better, Faster, Stronger']},
+ {title:'Random Access Memories',artist:'Daft Punk',year:'2013',colors:['#242830','#dce5eb'],tracks:['Give Life Back to Music','Get Lucky','Instant Crush','Lose Yourself to Dance']},
+ {title:'Currents',artist:'Tame Impala',year:'2015',colors:['#6b202a','#e3ae58'],tracks:['Let It Happen','The Less I Know the Better','Eventually','New Person, Same Old Mistakes']},
+ {title:'AM',artist:'Arctic Monkeys',year:'2013',colors:['#141619','#555d66'],tracks:['Do I Wanna Know?','R U Mine?','Arabella','Why\'d You Only Call Me When You\'re High?']},
+ {title:'To Pimp a Butterfly',artist:'Kendrick Lamar',year:'2015',colors:['#1d1610','#8e4127'],tracks:['Wesley\'s Theory','King Kunta','Alright','i']},
+ {title:'The Dark Side of the Moon',artist:'Pink Floyd',year:'1973',colors:['#080b11','#3b5268'],tracks:['Speak to Me','Breathe','Time','Money']},
+]
+function Cover({a}:{a:Album}){return <div className="cover-art" style={{'--cover-a':a.colors[0],'--cover-b':a.colors[1]} as React.CSSProperties}><b className="cover-mark">{a.title==='The Dark Side of the Moon'?'▱':a.title.slice(0,2).toUpperCase()}</b><strong className="cover-name">{a.title}</strong><small className="cover-year">{a.year} · COVER FLOW EDITION</small></div>}
+export default function Page(){
+ const [view,setView]=useState<'menu'|'flow'>('menu'); const [index,setIndex]=useState(0); const [flipped,setFlipped]=useState(false); const [playing,setPlaying]=useState(false); const [pos,setPos]=useState(0); const inertia=useRef(new Inertia(0,0,albums.length-1)); const drag=useRef<number|null>(null); const keys=useRef<Record<string,boolean>>({}); const sequence=useRef<{value:string;time:number}>({value:'',time:0}); const album=albums[index]
+ const move=(delta:number)=>{inertia.current.target=inertia.current.clamp(inertia.current.target+delta);tick()}
+ const triggerMenu=()=>{setView(v=>v==='menu'?'flow':'menu');setFlipped(false)}
+ const triggerSelect=()=>{if(view==='menu')setView('flow');else setFlipped(v=>!v)}
+ const togglePlayPause=()=>setPlaying(v=>!v)
+ useEffect(()=>{let raf=0;const loop=()=>{const p=inertia.current.step();setPos(p);const next=Math.max(0,Math.min(albums.length-1,Math.round(p)));if(next!==index){setIndex(next);setFlipped(false)};raf=requestAnimationFrame(loop)};raf=requestAnimationFrame(loop);return()=>cancelAnimationFrame(raf)},[index])
+ useEffect(()=>{const onKeyDown=(e:KeyboardEvent)=>{if(e.nativeEvent.isComposing||e.keyCode===229)return;const k=e.key.toLowerCase();keys.current[k]=true;if(keys.current.t&&keys.current.y){triggerMenu();return}if(keys.current.v&&keys.current.b){togglePlayPause();return}if((keys.current.g&&keys.current.h)||k==='enter'||k===' '){e.preventDefault();triggerSelect();return}if(k==='j'||k==='arrowright'){e.preventDefault();move(1);return}if(k==='f'||k==='arrowleft'){e.preventDefault();move(-1);return}const wheel='tryunjbvcfrt';const now=Date.now();const previous=sequence.current;const next=previous.time+600<now?'':previous.value;const expected=next?wheel[(wheel.indexOf(next)+1)%wheel.length]:'t';if(k===expected){const value=next+k;sequence.current={value:value.slice(-wheel.length),time:now};if(value.length===wheel.length){move(1);sequence.current={value:'t',time:now}}}else if(k==='t'){sequence.current={value:'t',time:now}}else{sequence.current={value:'',time:now}}};const onKeyUp=(e:KeyboardEvent)=>{delete keys.current[e.key.toLowerCase()]};window.addEventListener('keydown',onKeyDown);window.addEventListener('keyup',onKeyUp);return()=>{window.removeEventListener('keydown',onKeyDown);window.removeEventListener('keyup',onKeyUp)}},[view])
+ const cards=useMemo(()=>[-2,-1,0,1,2].map(offset=>({offset,a:albums[Math.max(0,Math.min(albums.length-1,Math.round(pos)+offset))]})),[pos])
+ return <main className="ipod-shell"><header className="status-bar"><span>{view==='menu'?'Music':'Cover Flow'}</span><div className="status-right"><span>{playing?'❚❚':'▶'}</span><span className="battery"><i/></span></div></header><section className={`screen ${view==='flow'?'screen-flow':''}`} onPointerDown={e=>drag.current=e.clientX} onPointerUp={e=>{if(drag.current!==null){const dx=e.clientX-drag.current;if(Math.abs(dx)>12){const resistance=Math.min(1.4,Math.abs(dx)/90);move((dx<0?1:-1)*resistance)}inertia.current.target=inertia.current.clamp(Math.round(inertia.current.target));drag.current=null}}}>
+ {view==='menu'&&<div className="split-menu"><div className="split-menu-list">{['Cover Flow','Playlists','Artists','Albums','Songs'].map((item,i)=><button className={i===0?'active':''} key={item} onClick={()=>i===0&&setView('flow')}>{item}<span>›</span></button>)}</div><div className="split-preview"><Cover a={album}/></div></div>}
+ {view==='flow'&&<><div className="stage-glow"/><div className="carousel">{cards.map(({offset,a})=>{const delta=offset-(pos-Math.round(pos));const s=coverTransform(delta);return <button key={offset} className={`album-card ${offset===0?'is-center':''} ${flipped&&offset===0?'is-flipped':''}`} style={{transform:`translateX(${s.x}px) rotateY(${s.rotate}deg) translateZ(${s.z}px)`,filter:`brightness(${1-s.shade*.7})`,zIndex:100-Math.round(Math.abs(delta)*10)}} onClick={()=>offset===0?setFlipped(v=>!v):move(offset>0?1:-1)}><div className="card-face"><Cover a={a}/>{flipped&&offset===0&&<div className="track-back"><b>{a.title}</b>{a.tracks.map((t,i)=><span key={t}>{i+1}. {t}</span>)}</div>}</div></button>})}</div><div className="metadata"><strong>{album.title}</strong><span>{album.artist}</span></div><div className="controls-hint">J / F or arrows · G + H / ENTER SELECT · T + Y MENU · V + B PLAY</div></>}
+ </section></main>
+}
